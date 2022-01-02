@@ -12,6 +12,7 @@ import seaborn as sns
 
 
 # 原始数据四周补0
+
 def pad_data(data, nei_size):
     m, n = data.shape
     t1 = np.zeros([nei_size//2, n])
@@ -48,12 +49,11 @@ img_rec = cv2.resize(img_rec, img_truth.shape, interpolation=cv2.INTER_CUBIC)
 img_truth = cv2.resize(img_truth, img_truth.shape, interpolation=cv2.INTER_CUBIC)
 
 # opencv二值图反色处理；类标签0表示改变的像素，类标签1表示不变的像素
-# img_truth = cv2.bitwise_not(img_truth)
 mask1 = np.where(img_truth == 1)
 mask0 = np.where(img_truth == 0)
 img_truth[mask1] = 0
 img_truth[mask0] = 1
-print(img_truth)
+# print(img_truth)
 
 # print(img_truth.shape)
 # print(img_bef)
@@ -63,16 +63,17 @@ print(img_truth)
 # gray_bef_image = cv2.cvtColor(img_bef, cv2.COLOR_RGB2GRAY)  # 灰度化
 # gray_rec_image = cv2.cvtColor(img_rec, cv2.COLOR_RGB2GRAY)  # 灰度化
 
-# nei_size = 5
 # # 邻域取训练数据
-# im1 = pad_data(img_bef, nei_size)  # 四周补零
-# data = gen_dataX(im1, nei_size)
+# nei_size = 9
+# img_full_withzero = pad_data(img_bef, nei_size)  # 四周补零
+# data = gen_dataX(img_full_withzero, nei_size)
 # print(data.shape)
+
+# 计算灰度相似性矩阵
 arr_add = img_bef.astype(np.float16) + img_rec.astype(np.float16)
 arr_sub = img_bef.astype(np.float16) - img_rec.astype(np.float16)
 zero_mask = np.where(arr_add == 0)  # 得到零元素位置
-arr_add[zero_mask] = 1  # 分母为0的地方置1
-
+arr_add[zero_mask] = 1  # 分母为0的地方置1，防止出现计算错误0+0
 S = abs(arr_sub)/(arr_add)  # 灰度相似度矩阵
 # print(S)
 # # 绘制原图直方图并显示最佳阈值
@@ -93,5 +94,67 @@ print(pre_label)
 
 acc = np.sum(pre_label == img_truth)/(pre_label.size)
 print(acc)
-plt.imshow(pre_label, cmap=cm.gray)
-plt.show()
+# plt.imshow(pre_label, cmap=cm.gray)
+# plt.show()
+
+nei_size = 9
+# 邻域取判断数据
+label_full_withzero = pad_data(pre_label, nei_size)  # 四周补零
+data = gen_dataX(label_full_withzero, nei_size)  # 邻域数据
+
+# 邻域取训练数据
+bef_img_full_withzero = pad_data(img_bef, nei_size)  # 四周补零
+bef_data = gen_dataX(bef_img_full_withzero, nei_size)  # 邻域数据
+
+rec_img_full_withzero = pad_data(img_rec, nei_size)  # 四周补零
+rec_data = gen_dataX(rec_img_full_withzero, nei_size)  # 邻域数据
+
+# 选取标准
+equal_num = np.zeros(data.shape[0])
+pre_label = pre_label.flatten()  # 将数据拉平
+a = 0.6
+print(data.shape)
+print(pre_label.shape)
+for i in range(0, data.shape[0]):
+    equal_num[i] = np.sum(data[i, :] == pre_label[i])
+
+arr_bool = equal_num/(nei_size**2) > a  # 得到符合条件的位置的布尔值
+
+bef_data_true = bef_data[arr_bool, :]  # 取数据
+rec_data_true = rec_data[arr_bool, :]
+true_label = pre_label[arr_bool]
+
+# bef_data_true = np.zeros(data.shape[1])
+# rec_data_true = np.zeros(data.shape[1])
+# true_label = []
+
+# for i in range(0, pre_label.shape[1]):
+#     equal_num = np.sum(data[i, :] == pre_label[0, i])
+#     if((equal_num/(nei_size**2)) > a):
+#         bef_data_true = np.concatenate((bef_data_true, bef_data[i, :]), axis=0)  # 列方向拼接
+#         rec_data_true = np.concatenate((rec_data_true, rec_data[i, :]), axis=0)
+#         true_label.append(pre_label[0, i])
+
+# bef_data_true = np.delete(bef_data_true, 0, 0)
+# rec_data_true = np.delete(rec_data_true, 0, 0)
+# true_label = np.numpy(true_label)
+
+total_data = np.concatenate((bef_data_true, rec_data_true), axis=1)  # 行方向拼接
+
+print(total_data.shape)
+
+train_size = 2000001
+
+train_feature = total_data[0:train_size, :]
+test_feature = total_data[train_size:, :]
+
+train_label = true_label[0:train_size]
+test_label = true_label[train_size:]
+
+# 训练数据保存
+np.save('params/train_feature', train_feature)
+np.save('params/train_label', train_label)
+
+# 测试数据保存
+np.save('params/test_feature', test_feature)
+np.save('params/test_label', test_label)
